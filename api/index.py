@@ -65,7 +65,7 @@ app = Flask(__name__)
 
 # Configure CORS for backend API
 CORS(app, 
-     origins=["*"],  # Allow all origins for now, restrict in production
+     origins=["https://khelonaaa.vercel.app","https://khelona.samarthnaikk.me"],  # Allow all origins for now, restrict in production
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"])
 
