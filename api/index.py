@@ -8,28 +8,23 @@ import os
 from dotenv import load_dotenv
 import asyncio
 
-# Handle both relative and absolute imports
 try:
     from .games import create_game, handle_game_move
 except ImportError:
     from games import create_game, handle_game_move
 
-# Load environment variables from .env file
 load_dotenv()
 
 # Try to import Redis, fallback to in-memory storage for local dev
 try:
     import redis
     
-    # Check if we have individual Redis config or full URL
     redis_url = os.getenv('REDIS_URL')
     
     if redis_url:
-        # Use full Redis URL
         redis_client = redis.from_url(redis_url, decode_responses=True)
         print("✓ Redis available")
     else:
-        # Use individual config parameters
         redis_host = os.getenv('REDIS_HOST', 'localhost')
         redis_port = int(os.getenv('REDIS_PORT', 6379))
         redis_username = os.getenv('REDIS_USERNAME')
@@ -61,10 +56,15 @@ _memory_store = {}
 GAME_PREFIX = "game:"
 MESSAGES_PREFIX = "messages:"
 
+# TTL settings (in seconds)
+GAME_TTL = 30 * 60  # 30 minutes
+MESSAGES_TTL = 30 * 60  # 30 minutes
+
 app = Flask(__name__)
 
 # Configure CORS for backend API
 CORS(app, 
+     origins = [str(os.getenv('ORIGIN_1')),str(os.getenv('ORIGIN_2'))]
      origins=["https://khelonaaa.vercel.app","https://khelona.samarthnaikk.me"],  # Allow all origins for now, restrict in production
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"])
@@ -84,12 +84,12 @@ def get_game(code):
         return None
 
 def set_game(code, game_data):
-    """Set game data in Redis or memory fallback"""
+    """Set game data in Redis or memory fallback with 30 min TTL"""
     try:
         if REDIS_AVAILABLE:
-            redis_client.set(f"{GAME_PREFIX}{code}", json.dumps(game_data))
+            redis_client.setex(f"{GAME_PREFIX}{code}", GAME_TTL, json.dumps(game_data))
         else:
-            # Use memory fallback
+            # Use memory fallback (no TTL for memory)
             _memory_store[f"{GAME_PREFIX}{code}"] = game_data
         return True
     except Exception as e:
@@ -110,18 +110,30 @@ def get_messages(code):
         return []
 
 def add_message(code, message_data):
-    """Add a message to a game in Redis or memory fallback"""
+    """Add a message to a game in Redis or memory fallback with 30 min TTL"""
     try:
         messages = get_messages(code)
         messages.append(message_data)
         if REDIS_AVAILABLE:
-            redis_client.set(f"{MESSAGES_PREFIX}{code}", json.dumps(messages))
+            redis_client.setex(f"{MESSAGES_PREFIX}{code}", MESSAGES_TTL, json.dumps(messages))
         else:
-            # Use memory fallback
+            # Use memory fallback (no TTL for memory)
             _memory_store[f"{MESSAGES_PREFIX}{code}"] = messages
         return True
     except Exception as e:
         print(f"Error adding message to {code}: {e}")
+        return False
+
+def extend_game_ttl(code):
+    """Extend TTL for a game when there's activity (resets to 30 minutes)"""
+    try:
+        if REDIS_AVAILABLE:
+            # Extend TTL for both game and messages
+            redis_client.expire(f"{GAME_PREFIX}{code}", GAME_TTL)
+            redis_client.expire(f"{MESSAGES_PREFIX}{code}", MESSAGES_TTL)
+        return True
+    except Exception as e:
+        print(f"Error extending TTL for game {code}: {e}")
         return False
 
 # Test route
@@ -236,6 +248,9 @@ def join_game_http():
         if not success:
             return jsonify({'error': 'Failed to update game'}), 500
         
+        # Extend TTL since there's activity
+        extend_game_ttl(code)
+        
         return jsonify({
             'success': True,
             'player_index': player_index,
@@ -248,6 +263,8 @@ def join_game_http():
 def get_game_state_endpoint(code):
     game_data = get_game(code)
     if game_data:
+        # Extend TTL since there's activity (checking game state)
+        extend_game_ttl(code)
         return jsonify({'state': game_data['state']})
     return jsonify({'error': 'Game not found'}), 404
 
@@ -281,6 +298,10 @@ def make_move_http():
             success = set_game(code, game_data)
             if not success:
                 return jsonify({'error': 'Failed to update game'}), 500
+            
+            # Extend TTL since there's activity
+            extend_game_ttl(code)
+            
             return jsonify({'success': True, 'state': updated_state})
         else:
             return jsonify({'error': 'Invalid move'}), 400
@@ -310,6 +331,9 @@ def send_message_http():
         success = add_message(code, message_data)
         if not success:
             return jsonify({'error': 'Failed to save message'}), 500
+        
+        # Extend TTL since there's activity
+        extend_game_ttl(code)
         
         return jsonify({'success': True})
         
