@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import random
 import string
-from games import create_game, handle_game_move
+from .games import create_game, handle_game_move
 
 app = Flask(__name__)
 # Configure CORS for backend API
