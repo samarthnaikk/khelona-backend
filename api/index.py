@@ -71,6 +71,7 @@ CORS(app,
 # Helper functions for Redis operations with fallback
 def get_game(code):
     """Get game data from Redis or memory fallback"""
+    global REDIS_AVAILABLE
     try:
         if REDIS_AVAILABLE:
             game_data = redis_client.get(f"{GAME_PREFIX}{code}")
@@ -80,10 +81,17 @@ def get_game(code):
             return _memory_store.get(f"{GAME_PREFIX}{code}")
     except Exception as e:
         print(f"Error getting game {code}: {e}")
-        return None
+        # Fall back to memory storage if Redis fails
+        try:
+            REDIS_AVAILABLE = False
+            return _memory_store.get(f"{GAME_PREFIX}{code}")
+        except Exception as mem_error:
+            print(f"Error with memory fallback: {mem_error}")
+            return None
 
 def set_game(code, game_data):
     """Set game data in Redis or memory fallback with 30 min TTL"""
+    global REDIS_AVAILABLE
     try:
         if REDIS_AVAILABLE:
             redis_client.setex(f"{GAME_PREFIX}{code}", GAME_TTL, json.dumps(game_data))
@@ -93,7 +101,15 @@ def set_game(code, game_data):
         return True
     except Exception as e:
         print(f"Error setting game {code}: {e}")
-        return False
+        # Fall back to memory storage if Redis fails
+        try:
+            _memory_store[f"{GAME_PREFIX}{code}"] = game_data
+            # Mark Redis as unavailable for future requests
+            REDIS_AVAILABLE = False
+            return True
+        except Exception as mem_error:
+            print(f"Error with memory fallback: {mem_error}")
+            return False
 
 def get_messages(code):
     """Get messages for a game from Redis or memory fallback"""
@@ -208,7 +224,10 @@ def create_game_endpoint():
         print(f"Generated code: {code}")
         
         # Get game type from request body, default to tic-tac-toe
-        data = request.get_json() if request.is_json else {}
+        try:
+            data = request.get_json(silent=True) or {}
+        except Exception:
+            data = {}
         game_type = data.get('type', 'tic-tac-toe')
         
         try:
