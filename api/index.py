@@ -82,6 +82,10 @@ def get_game(code):
     except Exception as e:
         print(f"Error getting game {code}: {e}")
         # Fall back to memory storage if Redis fails
+        # Note: Setting REDIS_AVAILABLE globally may cause race conditions in 
+        # multi-threaded production environments. This is acceptable for 
+        # single-threaded dev/simple deployments. For production, consider
+        # using thread-local storage or a more robust connection pool.
         try:
             REDIS_AVAILABLE = False
             return _memory_store.get(f"{GAME_PREFIX}{code}")
@@ -102,6 +106,9 @@ def set_game(code, game_data):
     except Exception as e:
         print(f"Error setting game {code}: {e}")
         # Fall back to memory storage if Redis fails
+        # Note: Setting REDIS_AVAILABLE globally may cause race conditions in 
+        # multi-threaded production environments. This is acceptable for 
+        # single-threaded dev/simple deployments.
         try:
             _memory_store[f"{GAME_PREFIX}{code}"] = game_data
             # Mark Redis as unavailable for future requests

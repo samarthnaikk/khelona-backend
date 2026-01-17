@@ -82,7 +82,8 @@ def handle_dart_move(game, player_index, throw_data):
     
     # Check for bust (score goes below 0 or exactly 1)
     # In standard darts, you must reach exactly 0 and can't go below 0
-    # Also, you can't finish on 1 (no way to hit exactly 1 with a double)
+    # You can't finish on 1 because there's no throw worth exactly 1 point
+    # (the minimum scoring double is D1 = 2 points)
     if new_score < 0 or new_score == 1:
         # Bust - score reverts, turn ends
         game['darts_thrown'] = 0
@@ -120,6 +121,9 @@ def handle_dart_move(game, player_index, throw_data):
     if game['darts_thrown'] >= 3:
         game['darts_thrown'] = 0
         game['turn'] = 1 - game['turn']
-        game['current_round'] += 1 if game['turn'] == 0 else 0
+        # Increment round counter when both players have completed their turns
+        # (i.e., when turn switches back to player 0)
+        if game['turn'] == 0:
+            game['current_round'] += 1
     
     return True, game
