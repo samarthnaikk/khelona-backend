@@ -206,22 +206,28 @@ def create_game_endpoint():
             existing_game = get_game(code)
         
         print(f"Generated code: {code}")
-        # Default to tic-tac-toe for now, can be extended to accept game type
+        
+        # Get game type from request body, default to tic-tac-toe
+        data = request.get_json() if request.is_json else {}
+        game_type = data.get('type', 'tic-tac-toe')
+        
         try:
-            game_state = create_game('tic-tac-toe')
+            game_state = create_game(game_type)
+            if game_state is None:
+                return jsonify({'error': f'Invalid game type: {game_type}'}), 400
             print(f"Game state created: {game_state}")
         except Exception as game_error:
             print(f"Error creating game state: {game_error}")
             return jsonify({'error': f'Game creation failed: {str(game_error)}'}), 500
             
-        game_data = {'type': 'tic-tac-toe', 'state': game_state}
+        game_data = {'type': game_type, 'state': game_state}
         success = set_game(code, game_data)
         
         if not success:
             return jsonify({'error': 'Failed to save game to storage'}), 500
         
         print(f"Created game with code: {code}")
-        return jsonify({'code': code})
+        return jsonify({'code': code, 'type': game_type})
     except Exception as e:
         print(f"Error creating game: {e}")
         import traceback

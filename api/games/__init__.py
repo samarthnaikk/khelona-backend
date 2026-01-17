@@ -1,10 +1,15 @@
 from .tic_tac_toe import create_tic_tac_toe_game, handle_tic_tac_toe_move
+from .dart import create_dart_game, handle_dart_move
 
 # Game registry - add new games here
 GAME_HANDLERS = {
     'tic-tac-toe': {
         'create': create_tic_tac_toe_game,
         'handle_move': handle_tic_tac_toe_move
+    },
+    'dart': {
+        'create': create_dart_game,
+        'handle_move': handle_dart_move
     }
 }
 
