@@ -71,6 +71,7 @@ CORS(app,
 # Helper functions for Redis operations with fallback
 def get_game(code):
     """Get game data from Redis or memory fallback"""
+    global REDIS_AVAILABLE
     try:
         if REDIS_AVAILABLE:
             game_data = redis_client.get(f"{GAME_PREFIX}{code}")
@@ -80,10 +81,21 @@ def get_game(code):
             return _memory_store.get(f"{GAME_PREFIX}{code}")
     except Exception as e:
         print(f"Error getting game {code}: {e}")
-        return None
+        # Fall back to memory storage if Redis fails
+        # Note: Setting REDIS_AVAILABLE globally may cause race conditions in 
+        # multi-threaded production environments. This is acceptable for 
+        # single-threaded dev/simple deployments. For production, consider
+        # using thread-local storage or a more robust connection pool.
+        try:
+            REDIS_AVAILABLE = False
+            return _memory_store.get(f"{GAME_PREFIX}{code}")
+        except Exception as mem_error:
+            print(f"Error with memory fallback: {mem_error}")
+            return None
 
 def set_game(code, game_data):
     """Set game data in Redis or memory fallback with 30 min TTL"""
+    global REDIS_AVAILABLE
     try:
         if REDIS_AVAILABLE:
             redis_client.setex(f"{GAME_PREFIX}{code}", GAME_TTL, json.dumps(game_data))
@@ -93,7 +105,18 @@ def set_game(code, game_data):
         return True
     except Exception as e:
         print(f"Error setting game {code}: {e}")
-        return False
+        # Fall back to memory storage if Redis fails
+        # Note: Setting REDIS_AVAILABLE globally may cause race conditions in 
+        # multi-threaded production environments. This is acceptable for 
+        # single-threaded dev/simple deployments.
+        try:
+            _memory_store[f"{GAME_PREFIX}{code}"] = game_data
+            # Mark Redis as unavailable for future requests
+            REDIS_AVAILABLE = False
+            return True
+        except Exception as mem_error:
+            print(f"Error with memory fallback: {mem_error}")
+            return False
 
 def get_messages(code):
     """Get messages for a game from Redis or memory fallback"""
@@ -206,22 +229,31 @@ def create_game_endpoint():
             existing_game = get_game(code)
         
         print(f"Generated code: {code}")
-        # Default to tic-tac-toe for now, can be extended to accept game type
+        
+        # Get game type from request body, default to tic-tac-toe
         try:
-            game_state = create_game('tic-tac-toe')
+            data = request.get_json(silent=True) or {}
+        except Exception:
+            data = {}
+        game_type = data.get('type', 'tic-tac-toe')
+        
+        try:
+            game_state = create_game(game_type)
+            if game_state is None:
+                return jsonify({'error': f'Invalid game type: {game_type}'}), 400
             print(f"Game state created: {game_state}")
         except Exception as game_error:
             print(f"Error creating game state: {game_error}")
             return jsonify({'error': f'Game creation failed: {str(game_error)}'}), 500
             
-        game_data = {'type': 'tic-tac-toe', 'state': game_state}
+        game_data = {'type': game_type, 'state': game_state}
         success = set_game(code, game_data)
         
         if not success:
             return jsonify({'error': 'Failed to save game to storage'}), 500
         
         print(f"Created game with code: {code}")
-        return jsonify({'code': code})
+        return jsonify({'code': code, 'type': game_type})
     except Exception as e:
         print(f"Error creating game: {e}")
         import traceback
